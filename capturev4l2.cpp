@@ -30,7 +30,7 @@ int image_width = IMAGE_WIDTH_360P;
 int image_height = IMAGE_HEIGHT_360P;
 
 uint8_t *buffer;
- 
+
 /**
  * converts a YUYV raw buffer to a JPEG buffer.
  * input is in YUYV (YUV 422). output is JPEG binary.
@@ -135,7 +135,7 @@ static int xioctl(int fd, int request, void *arg)
 {
     int r;
 
-    do 
+    do
     {
         r = ioctl(fd, request, arg);
     }
@@ -143,7 +143,7 @@ static int xioctl(int fd, int request, void *arg)
 
     return r;
 }
- 
+
 int print_caps(int fd, int pixel_format)
 {
     struct v4l2_capability caps = {};
@@ -194,7 +194,7 @@ int print_caps(int fd, int pixel_format)
     if(pixel_format == 2) fmt.fmt.pix.pixelformat = V4L2_PIX_FMT_RGB24;
 
     fmt.fmt.pix.field = V4L2_FIELD_NONE;
-    
+
     if (-1 == xioctl(fd, VIDIOC_S_FMT, &fmt))
     {
         perror("Setting Pixel Format");
@@ -206,27 +206,29 @@ int print_caps(int fd, int pixel_format)
             "  Width: %d\n"
             "  Height: %d\n"
             "  PixFmt: %s\n"
-            "  Field: %d\n",
+            "  Field: %d\n"
+            "  support_grbg10: %s\n",
             fmt.fmt.pix.width,
             fmt.fmt.pix.height,
             fourcc,
-            fmt.fmt.pix.field);
+            fmt.fmt.pix.field,
+            support_grbg10 ? "support_grbg10" : "not support_grbg10");
     return 0;
 }
- 
+
 int init_mmap(int fd)
 {
     struct v4l2_requestbuffers req = {0};
     req.count = 1;
     req.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
     req.memory = V4L2_MEMORY_MMAP;
- 
+
     if (-1 == xioctl(fd, VIDIOC_REQBUFS, &req))
     {
         perror("Requesting Buffer");
         return 1;
     }
- 
+
     struct v4l2_buffer buf = {0};
     buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
     buf.memory = V4L2_MEMORY_MMAP;
@@ -236,14 +238,14 @@ int init_mmap(int fd)
         perror("Querying Buffer");
         return 1;
     }
- 
+
     buffer = mmap (NULL, buf.length, PROT_READ | PROT_WRITE, MAP_SHARED, fd, buf.m.offset);
     printf("Length: %d\nAddress: %p\n", buf.length, buffer);
     // printf("Image Length: %d\n", buf.bytesused);
 
     return 0;
 }
- 
+
 int capture_image(int fd, int format)
 {
     struct v4l2_buffer buf = {0};
@@ -256,13 +258,13 @@ int capture_image(int fd, int format)
         perror("Query Buffer");
         return 1;
     }
- 
+
     if(-1 == xioctl(fd, VIDIOC_STREAMON, &buf.type))
     {
         perror("Start Capture");
         return 1;
     }
- 
+
     fd_set fds;
     FD_ZERO(&fds);
     FD_SET(fd, &fds);
@@ -275,13 +277,13 @@ int capture_image(int fd, int format)
         perror("Waiting for Frame");
         return 1;
     }
- 
+
     if(-1 == xioctl(fd, VIDIOC_DQBUF, &buf))
     {
         perror("Retrieving Frame");
         return 1;
     }
-    
+
     cv::Mat cv_img;
 
     if (format == 0 ){
@@ -301,7 +303,7 @@ int capture_image(int fd, int format)
         cv_img = cv::Mat(cv::Size(image_width, image_height), CV_8UC3, buffer);
     }
 
-    cv::imshow("view", cv_img);
+//    cv::imshow("view", cv_img);
 
     // You may do image processing here
     // Begin OpenCV Code
@@ -321,17 +323,17 @@ int capture_image(int fd, int format)
 
     // printf("libjpeg produced %ld bytes\n", outlen);
 
-    // Write JPEG to file 
+    // Write JPEG to file
     std::vector<uint8_t> output = std::vector<uint8_t>(outbuffer, outbuffer + outlen);
     std::ofstream ofs("output.jpg", std::ios_base::binary);
     ofs.write((const char*) &output[0], output.size());
     ofs.close();
 
-    cv::waitKey(1);
+//    cv::waitKey(1);
 
     return 0;
 }
- 
+
 static void usage(const char *argv0)
 {
     fprintf(stderr, "Usage: %s [options]\n", argv0);
@@ -370,7 +372,7 @@ int main(int argc, char* argv[])
             case 'h':
                 usage(argv[0]);
                 return 1;
-            
+
             case 'v':
                 v4l2_devname = optarg;
                 printf("Use video device: %s\n", v4l2_devname);
@@ -409,19 +411,22 @@ int main(int argc, char* argv[])
     {
         return 1;
     }
-    
+
     if(init_mmap(fd))
     {
         return 1;
     }
 
-    for(; ; )
+    if(capture_image(fd, pixel_format))
     {
-        if(capture_image(fd, pixel_format)) 
-        {
-            return 1;
-        }
+        return 1;
     }
+
+    if(capture_image(fd, pixel_format))
+    {
+      return 1;
+    }
+
     close(fd);
 
     return 0;
